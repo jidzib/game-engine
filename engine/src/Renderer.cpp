@@ -355,6 +355,15 @@ Renderer::~Renderer() = default;
 void Renderer::resize(unsigned int width, unsigned int height) {
     impl_->resizeTarget(width, height);
 }
+void Renderer::resizeScene(unsigned int width, unsigned int height) {
+    impl_->resizeTarget(width, height);
+}
+void Renderer::prepareWindow(unsigned int width, unsigned int height) {
+    impl_->windowState();
+    glViewport(0, 0, static_cast<GLsizei>(width), static_cast<GLsizei>(height));
+    glClearColor(0.025f, 0.040f, 0.065f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+}
 void Renderer::drawScene(const Camera& camera, const Scene& scene) {
     auto& renderer = *impl_;
     if (!renderer.width || !renderer.height) return;
@@ -397,7 +406,8 @@ void Renderer::blitSceneToWindow() {
 }
 void Renderer::present() {
     auto& renderer = *impl_;
-    if (!renderer.width || !renderer.height) return;
+    RECT client{};
+    if (!GetClientRect(WindowFromDC(renderer.dc), &client) || client.right == 0 || client.bottom == 0) return;
     if (!SwapBuffers(renderer.dc)) throw std::runtime_error("OpenGL buffer swap failed.");
     if (!renderer.vsync) Sleep(1);
 }

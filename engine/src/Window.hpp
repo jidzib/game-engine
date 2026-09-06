@@ -10,6 +10,8 @@ public:
     Window& operator=(const Window&) = delete;
     bool poll();
     float takeWheelDelta();
+    using EventHandler = LRESULT (*)(HWND, UINT, WPARAM, LPARAM);
+    void setEventHandler(EventHandler handler) { eventHandler_ = handler; }
     [[nodiscard]] HWND handle() const { return handle_; }
     [[nodiscard]] unsigned int width() const { return width_; }
     [[nodiscard]] unsigned int height() const { return height_; }
@@ -23,5 +25,6 @@ private:
     unsigned int height_ = 720;
     float wheelDelta_ = 0.0f;
     bool closing_ = false;
+    EventHandler eventHandler_ = nullptr;
 };
 }

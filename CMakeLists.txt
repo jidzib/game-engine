@@ -23,10 +23,29 @@ target_compile_definitions(engine PUBLIC WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _U
 find_package(OpenGL REQUIRED)
 target_link_libraries(engine PRIVATE OpenGL::GL user32 gdi32)
 
+add_library(imgui STATIC
+    third_party/imgui/imgui.cpp
+    third_party/imgui/imgui_draw.cpp
+    third_party/imgui/imgui_tables.cpp
+    third_party/imgui/imgui_widgets.cpp
+    third_party/imgui/backends/imgui_impl_win32.cpp
+    third_party/imgui/backends/imgui_impl_opengl3.cpp
+)
+target_include_directories(imgui PUBLIC third_party/imgui third_party/imgui/backends)
+target_compile_features(imgui PUBLIC cxx_std_20)
+target_compile_definitions(imgui PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+target_link_libraries(imgui PRIVATE OpenGL::GL user32 gdi32 dwmapi)
+add_library(editor STATIC editor/Editor.cpp)
+target_include_directories(editor PUBLIC editor PRIVATE engine/include engine/src)
+target_compile_features(editor PUBLIC cxx_std_20)
+target_compile_definitions(editor PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+target_link_libraries(editor PRIVATE imgui OpenGL::GL)
+target_link_libraries(engine PRIVATE editor)
+
 add_executable(sandbox WIN32 sandbox/main.cpp)
 target_link_libraries(sandbox PRIVATE GameEngine::Engine)
 
-foreach(target IN ITEMS engine sandbox)
+foreach(target IN ITEMS engine editor sandbox)
     if(MSVC)
         target_compile_options(${target} PRIVATE /W4 /permissive- /Zc:__cplusplus)
     else()
@@ -50,4 +69,9 @@ if(BUILD_TESTING)
     target_link_libraries(renderer_tests PRIVATE GameEngine::Engine OpenGL::GL)
     add_test(NAME renderer_target COMMAND renderer_tests)
     set_tests_properties(renderer_target PROPERTIES TIMEOUT 20)
+    add_executable(editor_tests tests/EditorTests.cpp)
+    target_include_directories(editor_tests PRIVATE engine/src)
+    target_link_libraries(editor_tests PRIVATE GameEngine::Engine editor imgui OpenGL::GL)
+    add_test(NAME editor_interface COMMAND editor_tests)
+    set_tests_properties(editor_interface PROPERTIES TIMEOUT 20)
 endif()

@@ -49,7 +49,15 @@ LRESULT CALLBACK Window::procedure(HWND hwnd, UINT message, WPARAM wParam, LPARA
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
     }
     if (self) {
+        const LRESULT uiResult = self->eventHandler_ ? self->eventHandler_(hwnd, message, wParam, lParam) : 0;
         switch (message) {
+        case WM_DPICHANGED: {
+            const auto* bounds = reinterpret_cast<const RECT*>(lParam);
+            SetWindowPos(hwnd, nullptr, bounds->left, bounds->top,
+                bounds->right - bounds->left, bounds->bottom - bounds->top,
+                SWP_NOZORDER | SWP_NOACTIVATE);
+            return 0;
+        }
         case WM_CLOSE:
             // Release the renderer and GL context before destroying the HWND.
             self->closing_ = true;
@@ -75,6 +83,7 @@ LRESULT CALLBACK Window::procedure(HWND hwnd, UINT message, WPARAM wParam, LPARA
             PostQuitMessage(0);
             return 0;
         }
+        if (uiResult) return uiResult;
     }
     return DefWindowProcW(hwnd, message, wParam, lParam);
 }

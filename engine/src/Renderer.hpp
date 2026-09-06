@@ -18,6 +18,8 @@ public:
     Renderer(const Renderer&) = delete;
     Renderer& operator=(const Renderer&) = delete;
     void resize(unsigned int width, unsigned int height);
+    void resizeScene(unsigned int width, unsigned int height);
+    void prepareWindow(unsigned int width, unsigned int height);
     // Owns GL state; no caller state is preserved. Clears/draws the offscreen target,
     // then leaves framebuffer 0, program 0 and VAO 0 bound. Skips zero-area drawables.
     void drawScene(const Camera& camera, const Scene& scene);
