@@ -10,6 +10,7 @@ if(NOT WIN32)
 endif()
 
 add_library(engine STATIC
+    engine/src/Collision.cpp
     engine/src/Engine.cpp
     engine/src/Camera.cpp
     engine/src/Window.cpp
@@ -39,6 +40,9 @@ if(BUILD_TESTING)
     add_executable(scene_tests tests/SceneTests.cpp)
     target_link_libraries(scene_tests PRIVATE GameEngine::Engine)
     add_test(NAME scene_behavior COMMAND scene_tests)
+    add_executable(collision_tests tests/CollisionTests.cpp)
+    target_link_libraries(collision_tests PRIVATE GameEngine::Engine)
+    add_test(NAME collision_behavior COMMAND collision_tests)
     add_test(NAME render_smoke COMMAND sandbox --smoke-test)
     set_tests_properties(render_smoke PROPERTIES TIMEOUT 20)
 endif()

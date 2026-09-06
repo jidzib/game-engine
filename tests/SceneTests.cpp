@@ -42,19 +42,19 @@ int main() {
         expect(near(scene.cubes.front().position.x, 9), "Adding cubes must preserve existing references");
 
         engine::Player straight, diagonal, subdivided;
-        straight.move(1, 0, 1);
-        diagonal.move(1, 1, 1);
-        for (int i = 0; i < 100; ++i) { subdivided.move(1, 0, 0.01f); }
+        straight.move(1, 0, 0, 1);
+        diagonal.move(1, 1, 0, 1);
+        for (int i = 0; i < 100; ++i) { subdivided.move(1, 0, 0, 0.01f); }
         const auto& p = diagonal.object.position;
         expect(near(straight.object.position.x, 4), "Movement speed should use seconds");
         expect(near(std::sqrt(p.x*p.x + p.z*p.z), 4), "Diagonal movement must not be faster");
         expect(near(subdivided.object.position.x, straight.object.position.x), "Movement must be frame-rate independent");
         expect(near(p.y, -0.25f), "Movement must preserve player height");
-        straight.move(-1, 0, 1);
-        straight.move(0, 1, 0.5f);
-        straight.move(0, -1, 0.5f);
+        straight.move(-1, 0, 0, 1);
+        straight.move(0, 1, 0, 0.5f);
+        straight.move(0, -1, 0, 0.5f);
         expect(near(straight.object.position.x, 0) && near(straight.object.position.z, 0), "Opposing directions must cancel");
-        straight.move(0, 0, 10);
+        straight.move(0, 0, 0, 10);
         expect(near(straight.object.position.x, 0), "No input must not move the player");
         std::cout << "Scene and player checks passed.\n";
         return 0;

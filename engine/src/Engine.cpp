@@ -24,7 +24,9 @@ void Engine::run(unsigned int frameLimit) {
             const auto held = [](int key) { return (GetAsyncKeyState(key) & 0x8000) != 0 ? 1.0f : 0.0f; };
             camera.orbit((held(VK_LEFT) - held(VK_RIGHT)) * delta * 1.5f,
                 (held(VK_UP) - held(VK_DOWN)) * delta * 1.2f);
-            scene.player.move(held('A') - held('D'), held('W') - held('S'), held(VK_SPACE) - held(VK_LSHIFT), delta);
+            std::vector<const GameObject*> obstacles;
+            for (const auto& cube : scene.cubes) obstacles.push_back(&cube);
+            scene.player.move(held('A') - held('D'), held('W') - held('S'), held(VK_SPACE) - held(VK_LSHIFT), delta, obstacles);
             
             camera.zoom(-wheel * 0.6f);
             if (held('R') != 0.0f) { camera.reset(); }
