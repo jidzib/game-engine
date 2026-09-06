@@ -20,6 +20,30 @@ The window starts at 1280 x 720, supports resizing, and pauses rendering while
 minimized. Rendering uses a depth buffer, directional face lighting, and VSync
 when the driver supports WGL_EXT_swap_control.
 
+## Offscreen scene target
+
+The renderer draws the grid, cubes, and player into an RGBA8 texture with a
+24-bit depth renderbuffer, then blits its color to the window before the single
+presentation. Existing shaders and geometry are shared by this path.
+`Renderer::sceneTexture()` exposes a borrowed texture handle and dimensions for
+a future editor viewport; texture coordinates use OpenGL's bottom-left origin.
+The handle changes on successful storage resize and expires at renderer destruction.
+
+Unchanged dimensions reuse storage. Zero-area drawables skip drawing, preview,
+and presentation and expose an empty texture descriptor, retaining storage for
+restore. Sizes exceeding texture, renderbuffer, or viewport limits throw a
+descriptive error. Allocation and framebuffer completeness errors include the
+requested dimensions; failed allocation releases temporary resources and keeps
+the previous target. The sandbox reports the error and exits. All owned GL
+resources are deleted before the context and window are destroyed.
+
+Scene drawing establishes its depth, culling, masks, viewport, and framebuffer
+state. Drawing and `blitSceneToWindow()` finish with the default framebuffer,
+window viewport, program 0 and VAO 0, depth/culling/blending/scissor/stencil/sRGB
+disabled, and color/depth writes enabled. Later UI drawing must set its own
+program, geometry, texture, and blend state. These passes do not preserve caller
+GL state; calls require the renderer's context to remain current on its thread.
+
 ## Add your own cubes
 
 Edit `sandbox/main.cpp`, before `application.run(...)`, then rebuild:
@@ -132,6 +156,17 @@ Run `ctest --test-dir build/windows -C Debug --output-on-failure` after building
 The tests check transforms, stable object references, movement speed and diagonal
 normalization, projection depth/aspect, camera targeting, and a ten-frame OpenGL
 rendering smoke test. Use `-C Release` for Release.
+The `renderer_target` integration test reads actual GL pixels to check depth
+occlusion, draw-order independence, preview blitting, and resize aspect ratio.
+It also checks unchanged storage, zero-area/restore behavior, size-limit errors,
+repeated resizing, and context teardown.
+
+Offscreen task verification (2026-09-06): configuration and Debug/Release builds
+succeeded, and all four CTest tests passed in each configuration. The standalone
+Debug sandbox smoke test also exited successfully. Manual visual inspection and
+interactive minimize/restore were not performed; zero-area/restore was exercised
+through the renderer API. GPU out-of-memory and incomplete-framebuffer failures
+were not forced; size-limit rejection was tested.
 
 Run the sandbox with `--smoke-test` to create the window, compile the shaders,
 render ten frames, and exit. Exit code zero indicates success; errors return one.

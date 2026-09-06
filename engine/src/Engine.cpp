@@ -18,6 +18,7 @@ void Engine::run(unsigned int frameLimit) {
         const auto now = Clock::now();
         const float delta = std::clamp(std::chrono::duration<float>(now - previous).count(), 0.0f, 0.05f);
         previous = now;
+        renderer.resize(window.width(), window.height());
         if (window.minimized()) { WaitMessage(); continue; }
         const float wheel = window.takeWheelDelta();
         if (window.active()) {
@@ -31,9 +32,9 @@ void Engine::run(unsigned int frameLimit) {
             camera.zoom(-wheel * 0.6f);
             if (held('R') != 0.0f) { camera.reset(); }
         }
-        renderer.resize(window.width(), window.height());
         camera.setTarget(scene.player.object.position);
         renderer.drawScene(camera, scene);
+        renderer.blitSceneToWindow();
         renderer.present();
         if (frameLimit != 0 && ++frames >= frameLimit) { break; }
     }

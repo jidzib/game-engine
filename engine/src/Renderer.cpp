@@ -1,6 +1,7 @@
 #include "Renderer.hpp"
 #include <gl/GL.h>
 #include <array>
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <stdexcept>
@@ -12,6 +13,10 @@ namespace {
 constexpr GLenum arrayBuffer = 0x8892, staticDraw = 0x88E4;
 constexpr GLenum vertexShaderType = 0x8B31, fragmentShaderType = 0x8B30;
 constexpr GLenum compileStatus = 0x8B81, linkStatus = 0x8B82, infoLogLength = 0x8B84;
+constexpr GLenum framebuffer = 0x8D40, readFramebuffer = 0x8CA8, drawFramebuffer = 0x8CA9;
+constexpr GLenum renderbuffer = 0x8D41, colorAttachment = 0x8CE0, depthAttachment = 0x8D00;
+constexpr GLenum framebufferComplete = 0x8CD5, rgba8 = 0x8058, depth24 = 0x81A6;
+constexpr GLenum maxRenderbufferSize = 0x84E8, clampToEdge = 0x812F, framebufferSrgb = 0x8DB9;
 
 PROC extension(const char* name) {
     const PROC address = wglGetProcAddress(name);
@@ -21,6 +26,17 @@ PROC extension(const char* name) {
 // Windows exports GL 1.1 directly; load the required core functions from the current driver.
 struct GLApi {
 #define GL_FUNCTIONS(X) \
+    X(void, GenFramebuffers, (GLsizei, GLuint*)) \
+    X(void, DeleteFramebuffers, (GLsizei, const GLuint*)) \
+    X(void, BindFramebuffer, (GLenum, GLuint)) \
+    X(void, FramebufferTexture2D, (GLenum, GLenum, GLenum, GLuint, GLint)) \
+    X(GLenum, CheckFramebufferStatus, (GLenum)) \
+    X(void, GenRenderbuffers, (GLsizei, GLuint*)) \
+    X(void, DeleteRenderbuffers, (GLsizei, const GLuint*)) \
+    X(void, BindRenderbuffer, (GLenum, GLuint)) \
+    X(void, RenderbufferStorage, (GLenum, GLenum, GLsizei, GLsizei)) \
+    X(void, FramebufferRenderbuffer, (GLenum, GLenum, GLenum, GLuint)) \
+    X(void, BlitFramebuffer, (GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLbitfield, GLenum)) \
     X(void, GenVertexArrays, (GLsizei, GLuint*)) \
     X(void, DeleteVertexArrays, (GLsizei, const GLuint*)) \
     X(void, BindVertexArray, (GLuint)) \
@@ -100,12 +116,18 @@ struct Renderer::Impl {
     GLuint program = 0, vertexShader = 0, fragmentShader = 0;
     GLint modelLocation = -1, viewProjectionLocation = -1, tintLocation = -1;
     Mesh cube, grid;
+    struct Target {
+        GLuint fbo = 0, color = 0, depth = 0;
+        unsigned int width = 0, height = 0;
+    } target;
+    unsigned int maxWidth = 0, maxHeight = 0;
     unsigned int width = 0, height = 0;
     bool vsync = false;
 
     ~Impl() {
         if (context) {
             if (wglMakeCurrent(dc, context)) {
+                release(target);
                 if (cube.vbo) gl.DeleteBuffers(1, &cube.vbo);
                 if (grid.vbo) gl.DeleteBuffers(1, &grid.vbo);
                 if (cube.vao) gl.DeleteVertexArrays(1, &cube.vao);
@@ -150,6 +172,15 @@ struct Renderer::Impl {
         wglDeleteContext(context);
         context = modern;
         gl.load();
+        GLint textureLimit = 0, depthLimit = 0, viewportLimits[2]{};
+        glGetIntegerv(GL_MAX_TEXTURE_SIZE, &textureLimit);
+        glGetIntegerv(maxRenderbufferSize, &depthLimit);
+        glGetIntegerv(GL_MAX_VIEWPORT_DIMS, viewportLimits);
+        checkGL("Query scene target size limits");
+        if (textureLimit <= 0 || depthLimit <= 0 || viewportLimits[0] <= 0 || viewportLimits[1] <= 0)
+            throw std::runtime_error("OpenGL returned invalid scene target size limits.");
+        maxWidth = static_cast<unsigned int>(std::min({textureLimit, depthLimit, viewportLimits[0]}));
+        maxHeight = static_cast<unsigned int>(std::min({textureLimit, depthLimit, viewportLimits[1]}));
         GLint major = 0, minor = 0, profile = 0;
         glGetIntegerv(0x821B, &major); glGetIntegerv(0x821C, &minor); glGetIntegerv(0x9126, &profile);
         if (major < 3 || (major == 3 && minor < 3) || !(profile & 1))
@@ -222,6 +253,80 @@ struct Renderer::Impl {
         checkGL("OpenGL initialization");
     }
 
+    void release(Target& owned) noexcept {
+        if (owned.fbo) gl.DeleteFramebuffers(1, &owned.fbo);
+        if (owned.depth) gl.DeleteRenderbuffers(1, &owned.depth);
+        if (owned.color) glDeleteTextures(1, &owned.color);
+        owned = {};
+    }
+
+    void resizeTarget(unsigned int newWidth, unsigned int newHeight) {
+        if (!newWidth || !newHeight) {
+            width = newWidth; height = newHeight;
+            return; // Keep storage for restore, but hide it from sceneTexture().
+        }
+        if (newWidth > maxWidth || newHeight > maxHeight)
+            throw std::runtime_error("Scene target " + std::to_string(newWidth) + "x" + std::to_string(newHeight)
+                + " exceeds OpenGL limits " + std::to_string(maxWidth) + "x" + std::to_string(maxHeight));
+        if (target.width != newWidth || target.height != newHeight) {
+            // Commit only a complete target. A failed resize keeps the old allocation valid.
+            Target next;
+            try {
+                checkGL("Before scene target allocation");
+                gl.GenFramebuffers(1, &next.fbo);
+                glGenTextures(1, &next.color);
+                gl.GenRenderbuffers(1, &next.depth);
+                checkGL("Create scene target objects");
+                if (!next.fbo || !next.color || !next.depth)
+                    throw std::runtime_error("OpenGL returned an empty scene target object.");
+                glBindTexture(GL_TEXTURE_2D, next.color);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, clampToEdge);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, clampToEdge);
+                glTexImage2D(GL_TEXTURE_2D, 0, rgba8, static_cast<GLsizei>(newWidth),
+                    static_cast<GLsizei>(newHeight), 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+                checkGL("Allocate scene color texture (RGBA8)");
+                gl.BindRenderbuffer(renderbuffer, next.depth);
+                gl.RenderbufferStorage(renderbuffer, depth24, static_cast<GLsizei>(newWidth), static_cast<GLsizei>(newHeight));
+                checkGL("Allocate scene depth renderbuffer (DEPTH_COMPONENT24)");
+                gl.BindFramebuffer(framebuffer, next.fbo);
+                gl.FramebufferTexture2D(framebuffer, colorAttachment, GL_TEXTURE_2D, next.color, 0);
+                gl.FramebufferRenderbuffer(framebuffer, depthAttachment, renderbuffer, next.depth);
+                glDrawBuffer(colorAttachment);
+                glReadBuffer(colorAttachment);
+                const GLenum status = gl.CheckFramebufferStatus(framebuffer);
+                checkGL("Attach scene framebuffer storage");
+                if (status != framebufferComplete)
+                    throw std::runtime_error("Scene framebuffer incomplete; OpenGL status " + std::to_string(status));
+                next.width = newWidth; next.height = newHeight;
+            } catch (const std::exception& error) {
+                gl.BindFramebuffer(framebuffer, 0);
+                gl.BindRenderbuffer(renderbuffer, 0);
+                glBindTexture(GL_TEXTURE_2D, 0);
+                release(next);
+                throw std::runtime_error("Scene target allocation " + std::to_string(newWidth) + "x"
+                    + std::to_string(newHeight) + " failed: " + error.what());
+            }
+            gl.BindFramebuffer(framebuffer, 0);
+            gl.BindRenderbuffer(renderbuffer, 0);
+            glBindTexture(GL_TEXTURE_2D, 0);
+            release(target);
+            target = next;
+        }
+        width = newWidth; height = newHeight;
+    }
+
+    void windowState() {
+        gl.BindFramebuffer(framebuffer, 0);
+        glDrawBuffer(GL_BACK); glReadBuffer(GL_BACK);
+        glViewport(0, 0, static_cast<GLsizei>(width), static_cast<GLsizei>(height));
+        gl.UseProgram(0); gl.BindVertexArray(0);
+        glDisable(GL_DEPTH_TEST); glDisable(GL_CULL_FACE); glDisable(GL_BLEND);
+        glDisable(GL_SCISSOR_TEST); glDisable(GL_STENCIL_TEST); glDisable(framebufferSrgb);
+        glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE); glDepthMask(GL_TRUE);
+    }
+
     void upload(Mesh& mesh, const std::vector<Vertex>& vertices) {
         mesh.count = static_cast<GLsizei>(vertices.size());
         gl.GenVertexArrays(1, &mesh.vao); gl.GenBuffers(1, &mesh.vbo);
@@ -248,25 +353,51 @@ Renderer::Renderer(HWND window, unsigned int width, unsigned int height) : impl_
 }
 Renderer::~Renderer() = default;
 void Renderer::resize(unsigned int width, unsigned int height) {
-    if (!width || !height) return;
-    impl_->width = width; impl_->height = height;
-    glViewport(0, 0, static_cast<GLsizei>(width), static_cast<GLsizei>(height));
+    impl_->resizeTarget(width, height);
 }
 void Renderer::drawScene(const Camera& camera, const Scene& scene) {
     auto& renderer = *impl_;
+    if (!renderer.width || !renderer.height) return;
+    renderer.gl.BindFramebuffer(framebuffer, renderer.target.fbo);
+    glDrawBuffer(colorAttachment);
+    glViewport(0, 0, static_cast<GLsizei>(renderer.target.width), static_cast<GLsizei>(renderer.target.height));
+    glDisable(GL_SCISSOR_TEST); glDisable(GL_BLEND); glDisable(GL_STENCIL_TEST); glDisable(framebufferSrgb);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE); glDepthMask(GL_TRUE);
+    glEnable(GL_DEPTH_TEST); glDepthFunc(GL_LESS); glClearDepth(1.0); glDepthRange(0.0, 1.0);
+    glEnable(GL_CULL_FACE); glCullFace(GL_BACK); glFrontFace(GL_CCW);
+    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+    glClearColor(0.025f, 0.040f, 0.065f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     renderer.gl.UseProgram(renderer.program);
-    const Mat4 vp = camera.viewProjection(static_cast<float>(renderer.width)/static_cast<float>(renderer.height));
+    const Mat4 vp = camera.viewProjection(static_cast<float>(renderer.target.width)/static_cast<float>(renderer.target.height));
     renderer.gl.UniformMatrix4fv(renderer.viewProjectionLocation, 1, GL_FALSE, vp.values.data());
     renderer.draw(renderer.grid, GL_LINES, Mat4::identity(), {1,1,1});
     for (const auto& object : scene.cubes)
         renderer.draw(renderer.cube, GL_TRIANGLES, object.worldMatrix(), object.color);
     renderer.draw(renderer.cube, GL_TRIANGLES, scene.player.object.worldMatrix(), scene.player.object.color);
-    renderer.gl.BindVertexArray(0);
+    renderer.windowState();
     checkGL("Frame rendering");
+}
+SceneTexture Renderer::sceneTexture() const noexcept {
+    const auto& renderer = *impl_;
+    if (!renderer.width || !renderer.height) return {};
+    return {renderer.target.color, renderer.target.width, renderer.target.height};
+}
+void Renderer::blitSceneToWindow() {
+    auto& renderer = *impl_;
+    if (!renderer.width || !renderer.height) return;
+    renderer.windowState();
+    renderer.gl.BindFramebuffer(readFramebuffer, renderer.target.fbo);
+    glReadBuffer(colorAttachment);
+    renderer.gl.BindFramebuffer(drawFramebuffer, 0);
+    renderer.gl.BlitFramebuffer(0, 0, static_cast<GLint>(renderer.target.width), static_cast<GLint>(renderer.target.height),
+        0, 0, static_cast<GLint>(renderer.width), static_cast<GLint>(renderer.height), GL_COLOR_BUFFER_BIT, GL_NEAREST);
+    renderer.windowState();
+    checkGL("Scene preview blit");
 }
 void Renderer::present() {
     auto& renderer = *impl_;
+    if (!renderer.width || !renderer.height) return;
     if (!SwapBuffers(renderer.dc)) throw std::runtime_error("OpenGL buffer swap failed.");
     if (!renderer.vsync) Sleep(1);
 }
