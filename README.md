@@ -86,6 +86,18 @@ cmake --build --preset release
 
 Open this folder in Visual Studio to use its CMake integration, or open the generated solution under build/windows after configuring. Select sandbox as the startup target.
 
+After moving or renaming the project folder, regenerate CMake's cached absolute
+paths and rebuild from the new location:
+
+```powershell
+cmake --preset windows --fresh -DBUILD_TESTING=ON
+cmake --build --preset debug
+.\build\windows\bin\Debug\sandbox.exe
+```
+
+Reopen the folder in Visual Studio if it was open during the move. Generated
+build files retain the old location until CMake regenerates them.
+
 ## Structure
 
 - CMakeLists.txt: targets, include paths, C++ standard, and compiler warnings.
@@ -125,7 +137,6 @@ Run the sandbox with `--smoke-test` to create the window, compile the shaders,
 render ten frames, and exit. Exit code zero indicates success; errors return one.
 Normal runs display an error dialog on startup or rendering failure.
 
-Debug and Release were also built using Ninja Multi-Config under `build/verify`
-because the agent's sandbox blocks MSBuild's user-profile SDK/vcpkg discovery.
-The existing Visual Studio presets remain the normal development commands above.
-The verified demo is at `build/verify/bin/Debug/sandbox.exe`.
+Use the executables under `build/windows/bin/Debug` or `build/windows/bin/Release`.
+The older `build/verify` directory is not used by the Windows presets and may
+contain stale files from a previous project location.
