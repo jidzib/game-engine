@@ -252,7 +252,7 @@ void Renderer::resize(unsigned int width, unsigned int height) {
     impl_->width = width; impl_->height = height;
     glViewport(0, 0, static_cast<GLsizei>(width), static_cast<GLsizei>(height));
 }
-void Renderer::render(const Camera& camera, const Scene& scene) {
+void Renderer::drawScene(const Camera& camera, const Scene& scene) {
     auto& renderer = *impl_;
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     renderer.gl.UseProgram(renderer.program);
@@ -264,6 +264,9 @@ void Renderer::render(const Camera& camera, const Scene& scene) {
     renderer.draw(renderer.cube, GL_TRIANGLES, scene.player.object.worldMatrix(), scene.player.object.color);
     renderer.gl.BindVertexArray(0);
     checkGL("Frame rendering");
+}
+void Renderer::present() {
+    auto& renderer = *impl_;
     if (!SwapBuffers(renderer.dc)) throw std::runtime_error("OpenGL buffer swap failed.");
     if (!renderer.vsync) Sleep(1);
 }

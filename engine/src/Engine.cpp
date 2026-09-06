@@ -33,7 +33,8 @@ void Engine::run(unsigned int frameLimit) {
         }
         renderer.resize(window.width(), window.height());
         camera.setTarget(scene.player.object.position);
-        renderer.render(camera, scene);
+        renderer.drawScene(camera, scene);
+        renderer.present();
         if (frameLimit != 0 && ++frames >= frameLimit) { break; }
     }
 }

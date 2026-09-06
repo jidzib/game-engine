@@ -12,7 +12,10 @@ public:
     Renderer(const Renderer&) = delete;
     Renderer& operator=(const Renderer&) = delete;
     void resize(unsigned int width, unsigned int height);
-    void render(const Camera& camera, const Scene& scene);
+    // Clear and draw the scene to the default framebuffer, leaving it ready for composition.
+    void drawScene(const Camera& camera, const Scene& scene);
+    // Present the completed frame once and apply the configured frame pacing.
+    void present();
 private:
     struct Impl;
     std::unique_ptr<Impl> impl_;
