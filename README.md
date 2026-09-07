@@ -3,14 +3,15 @@
 C++20 engine foundation with a native Windows window, OpenGL 3.3 Core renderer,
 and an orbit camera following a movable orange player among configurable cubes.
 The engine is a static library; the sandbox is a standalone desktop executable.
-No third-party downloads are required. WGL creates the context, the graphics
+Dear ImGui is vendored at a pinned revision; no build-time downloads are required. WGL creates the context, the graphics
 driver supplies OpenGL, and the engine's Vec3/Mat4 types provide the math.
 
 ## Camera controls
 
-- WASD: move the orange player on the world X/Z plane (W = +Z, S = -Z, A = -X, D = +X).
+- WASD: move the orange player on the world X/Z plane (W = +Z, S = -Z, A = +X, D = -X).
 - Arrow keys: orbit around the player (hold to move).
-- Mouse wheel: zoom in/out.
+- Space / left Shift: move up / down.
+- Mouse wheel over the viewport image: zoom in/out. Scrolling other panels does not zoom.
 - R: reset the camera.
 - Escape or the close button: exit.
 
@@ -23,10 +24,10 @@ when the driver supports WGL_EXT_swap_control.
 ## Offscreen scene target
 
 The renderer draws the grid, cubes, and player into an RGBA8 texture with a
-24-bit depth renderbuffer, then blits its color to the window before the single
+24-bit depth renderbuffer, then displays it in the editor viewport before the single
 presentation. Existing shaders and geometry are shared by this path.
 `Renderer::sceneTexture()` exposes a borrowed texture handle and dimensions for
-a future editor viewport; texture coordinates use OpenGL's bottom-left origin.
+the editor viewport; texture coordinates use OpenGL's bottom-left origin and the UI flips the vertical UVs.
 The handle changes on successful storage resize and expires at renderer destruction.
 
 Unchanged dimensions reuse storage. Zero-area drawables skip drawing, preview,
@@ -66,7 +67,7 @@ The player is also drawn as a GameObject, available through
 the same way, and set `application.scene.player.movementSpeed` in units/second.
 Movement is normalized diagonally and uses elapsed frame time. The camera
 follows the player; R resets the camera without resetting player position.
-This is movement only: collision, gravity, and jumping are not implemented yet.
+Player movement uses swept AABB collision and sliding against enabled scene colliders. Gravity and jumping are not implemented.
 
 ## BoxCollider component (step 1)
 
@@ -175,3 +176,48 @@ Normal runs display an error dialog on startup or rendering failure.
 Use the executables under `build/windows/bin/Debug` or `build/windows/bin/Release`.
 The older `build/verify` directory is not used by the Windows presets and may
 contain stale files from a previous project location.
+
+
+## Minimal editor interface
+
+The separate `editor` target owns Dear ImGui and its Win32/OpenGL 3 backends.
+Scene and GameObject headers have no editor dependency. Hierarchy lists cube
+names read-only; Inspector provides placeholder guidance; Viewport displays the
+scene texture. Panels can be moved, resized, and collapsed using their title
+bars and borders. Layout persistence, docking, selection and editing are not
+implemented. Panels start with a sidebar and adjacent viewport each launch.
+
+Dear ImGui v1.91.9b is pinned to commit
+`f5befd2d29e66809cd1110a152e375a7f1981f06`. Source acquisition, archive checksum,
+license and compiled files are documented in
+[third_party/imgui/README.vendor.md](third_party/imgui/README.vendor.md).
+The existing Windows CMake presets build it directly without package installation.
+
+Each frame builds UI layout, sizes the scene texture from available viewport
+content multiplied by framebuffer scale, renders the scene, clears the native
+window drawable, renders UI and presents once. The per-monitor-aware Win32
+backend reports physical client pixels, so framebuffer scale is normally one.
+Fonts and style sizes rebuild on DPI changes, and WM_DPICHANGED applies the
+suggested native window bounds. The UI reverses vertical UVs for OpenGL textures.
+Collapsed viewports suspend scene rendering while the other panels still render.
+Native minimization pauses normal rendering; bounded smoke mode still exits.
+
+`Editor::input()` exposes viewport visibility, focus, image hover, and ImGui's
+keyboard/mouse capture flags for subsequent navigation work. Keyboard capture
+suppresses player and camera keys. Wheel zoom is routed only over the viewport
+image (which has no UI scrolling); other panels retain their wheel input.
+Close, resize and DPI lifecycle handling still runs after event forwarding.
+UI backends shut down before the renderer releases GL and before HWND destruction.
+
+Editor verification (2026-09-06):
+
+- Configuration with BUILD_TESTING=ON succeeded.
+- Debug and Release builds succeeded with approved Windows SDK access.
+- Debug CTest: 5/5 passed; Release CTest: 5/5 passed.
+- Standalone Debug sandbox --smoke-test exited with code 0.
+- The new editor_interface test verifies panel-derived target sizing, resizing,
+  collapse/restore, identical scene pixels after an actual UI pass, and GL/UI
+  teardown. Existing scene, collision, depth/aspect and renderer tests still pass.
+- Manual visual inspection, interactive input capture, and multi-monitor DPI
+  behavior were not verified. Texture orientation is implemented with flipped UVs;
+  no manual orientation check is claimed.
