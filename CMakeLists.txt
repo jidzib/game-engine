@@ -11,6 +11,7 @@ endif()
 
 add_library(engine STATIC
     engine/src/Collision.cpp
+    engine/src/ScenePersistence.cpp
     engine/src/Engine.cpp
     engine/src/Camera.cpp
     engine/src/Window.cpp
@@ -18,6 +19,7 @@ add_library(engine STATIC
 )
 add_library(GameEngine::Engine ALIAS engine)
 target_include_directories(engine PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/engine/include")
+target_include_directories(engine PRIVATE third_party/json)
 target_compile_features(engine PUBLIC cxx_std_20)
 target_compile_definitions(engine PUBLIC WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE)
 find_package(OpenGL REQUIRED)
@@ -56,6 +58,10 @@ set_property(DIRECTORY PROPERTY VS_STARTUP_PROJECT sandbox)
 
 include(CTest)
 if(BUILD_TESTING)
+    add_executable(persistence_tests tests/PersistenceTests.cpp)
+    target_include_directories(persistence_tests PRIVATE editor third_party/json)
+    target_link_libraries(persistence_tests PRIVATE GameEngine::Engine)
+    add_test(NAME scene_persistence COMMAND persistence_tests)
     add_executable(editor_operations_tests tests/EditorOperationsTests.cpp)
     target_include_directories(editor_operations_tests PRIVATE editor)
     target_link_libraries(editor_operations_tests PRIVATE GameEngine::Engine)

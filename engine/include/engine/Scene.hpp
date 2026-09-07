@@ -42,7 +42,7 @@ struct Scene {
         return true;
     }
 
-    // Loading restores cubes in ascending ID order into a fresh Scene. IDs
+    // Incremental restoration requires ascending IDs into a fresh Scene. IDs
     // below the allocation watermark are rejected even if already deleted.
     // Failed insertion does not consume an ID; exhaustion never wraps to zero.
     GameObject& restoreCube(CubeId id, std::string name, Vec3 position = {0, 0, 0},
@@ -57,6 +57,9 @@ struct Scene {
     }
 
 private:
+    // The validated persistence transaction restores arbitrary file order and
+    // the saved allocation watermark without weakening restoreCube's contract.
+    friend struct ScenePersistence;
     // Default copying preserves IDs and this watermark (including deleted IDs).
     // Copies are independent identity namespaces; IDs are not globally unique.
     CubeId nextCubeId_ = 1;

@@ -1,6 +1,7 @@
 #pragma once
 #include <engine/Scene.hpp>
 #include <engine/Collision.hpp>
+#include <engine/ScenePersistence.hpp>
 
 namespace editor {
 // Value snapshots contain editable properties only; identity stays Scene-owned.
@@ -15,6 +16,10 @@ struct CubeProperties {
 
 class Operations {
 public:
+    void load(engine::Scene& scene, const std::filesystem::path& path) {
+        engine::ScenePersistence::load(scene, path);
+        selected_ = engine::invalidCubeId;
+    }
     engine::CubeId selection() const { return selected_; }
     void select(const engine::Scene& scene, engine::CubeId id) {
         selected_ = scene.findCube(id) ? id : engine::invalidCubeId;

@@ -1,45 +1,45 @@
-# Task: Add cube selection and property editing
+# Task: Save and load authored scenes
 
 ## Goal
 
-Create, select, edit, and delete scene cubes through the editor hierarchy and inspector.
+Persist scenes edited in the application and reload them without losing object identity or authored properties.
 
 ## Context
 
 - Engine: C++20, Windows, OpenGL 3.3, Dear ImGui.
-- Prerequisites: tasks 1–5 provide stable IDs, editor panels, offscreen rendering, and independent navigation.
-- GameObject contains name, position, scale, color, and optional BoxCollider.
-- Cube dimensions are 2 * scale.
-- worldMatrix() rejects nonfinite positions and nonpositive/nonfinite scales by throwing.
-- BoxCollider has enabled, local offset, and local halfExtents; inspect actual validation rules.
-- Constraints: follow repository instructions. Keep Scene::cubes; no ECS/reflection rewrite.
+- Prerequisites: tasks 1–6 provide stable IDs and working cube authoring.
+- Scene contains player and cubes. Cube data includes ID, name, position, scale, color, and optional BoxCollider.
+- Inspect Player and BoxCollider to determine authored fields and existing validation.
+- Use versioned JSON. Reuse an existing JSON library; if absent, this task authorizes one small, pinned JSON dependency following repository conventions.
+- Constraints: inspect repository instructions. Do not serialize pointers, OpenGL resources, UI selection, or transient collision state.
 
 ## Steps
 
-1. Establish a baseline and inspect the current editor and scene lifecycle APIs.
-2. Make hierarchy rows selectable using object IDs for both selection and UI identity, including duplicate names.
-3. Add cube creation and deletion actions. Select newly created cubes and clear selection safely after selected-object deletion.
-4. Add inspector fields for name, position, scale, and color. Clearly label scale as half dimensions or provide a dimensions field with explicit conversion.
-5. Add collider attachment/removal and editing for enabled, offset, and halfExtents. Preserve the distinction between missing and disabled colliders.
-6. Validate proposed values before committing. Reject nonfinite values and invalid sizes without allowing UI input to trigger a fatal render exception. Show understandable validation feedback.
-7. Keep mutations behind small editor operations reusable by future undo support; do not build undo/redo yet.
-8. Resolve selection by ID when used rather than retaining pointers across mutations.
-9. Add focused tests for meaningful mutation/validation behavior and regressions.
+1. Establish a baseline and define a documented version-1 schema.
+2. Persist cube order, IDs, names, transforms, colors, and complete optional collider configuration. Preserve missing versus disabled colliders.
+3. Persist player spawn/transform, appearance, collider configuration, movementSpeed, and other existing authored settings where applicable. Exclude runtime-only state and document the field mapping.
+4. Implement serialization separately from editor widgets.
+5. Parse into a temporary scene and validate schema version, required fields, numeric bounds, object IDs, and collider data. Reject duplicate/invalid IDs and unsupported versions with actionable errors.
+6. Restore IDs without precision loss and update ID allocation so later additions cannot collide.
+7. Replace the active scene only after a successful load. Clear selection and stale editor references after replacement; leave the current scene untouched on failure.
+8. Add Save and Load actions with an editable path and visible success/error feedback. Native dialogs are optional.
+9. Save through a temporary sibling file and an appropriate replacement operation so a failed write does not truncate an existing valid scene. Handle filesystem failures explicitly.
+10. Add automated round-trip, invalid-input, identity-continuation, and failed-load preservation tests using temporary test files.
 
 ## Acceptance Criteria
 
-- [ ] Users can add, select, rename, edit, and delete cubes.
-- [ ] Identically named cubes are independently selectable/editable.
-- [ ] Deleting selection causes no stale access.
-- [ ] Property changes appear in the viewport.
-- [ ] Invalid transforms/collider values are rejected without crashing.
-- [ ] Collider attachment, enabled state, and removal work distinctly.
-- [ ] Typing and dragging inspector controls do not activate navigation.
-- [ ] Existing tests, builds, and smoke-test pass, or blockers are reported.
+- [ ] Save/load preserves authored cube and player data.
+- [ ] Duplicate names and missing/disabled colliders round-trip correctly.
+- [ ] Loaded IDs remain stable and subsequent creation gets a fresh ID.
+- [ ] Invalid, unsupported, or unreadable scenes do not replace the current scene.
+- [ ] Failed saves report errors and preserve existing valid destination contents.
+- [ ] Editor selection is safe after loading.
+- [ ] Schema/dependency choices are documented and relevant checks pass.
 
 ## Non-Goals
 
-- Player inspector, persistence, undo/redo, duplication, rotation, parenting, viewport picking, or gizmos.
+- Asset database, external mesh loading, undo history persistence, autosave, schema migration, or Play mode.
+- Unsaved-change prompts, which are a later feature.
 
 ## Verification Commands
 
@@ -52,4 +52,4 @@ Run from the repository root:
     ctest --test-dir build/windows -C Release --output-on-failure
     & .\build\windows\bin\Debug\sandbox.exe --smoke-test
 
-Manually exercise creation, duplicate names, editing, invalid values, collider toggles, and deletion. Report changed files, actual results, and whether visual verification occurred.
+Manually save an edited scene, restart, and load it. Exercise malformed input and an unwritable path where possible. Report actual results, field mapping, and limitations. Do not claim unrun checks passed.

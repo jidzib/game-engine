@@ -92,6 +92,33 @@ void Editor::beginFrame(engine::Scene& scene, engine::Renderer& renderer) {
     ImGui::SetNextWindowPos({0, 0}, ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize({sidebar, size.y * 0.55f}, ImGuiCond_FirstUseEver);
     if (ImGui::Begin("Hierarchy")) {
+        const auto resizePath = [](ImGuiInputTextCallbackData* data) -> int {
+            auto& path = *static_cast<std::string*>(data->UserData);
+            path.resize(data->BufTextLen);
+            data->Buf = path.data();
+            return 0;
+        };
+        ImGui::InputText("Scene path", scenePath_.data(), scenePath_.capacity() + 1,
+            ImGuiInputTextFlags_CallbackResize, resizePath, &scenePath_);
+        if (ImGui::Button("Save")) {
+            try {
+                engine::ScenePersistence::save(scene, std::filesystem::path(std::u8string(scenePath_.begin(), scenePath_.end())));
+                persistenceFeedback_ = "Scene saved.";
+            } catch (const std::exception& e) { persistenceFeedback_ = e.what(); }
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Load")) {
+            try {
+                operations_.load(scene, std::filesystem::path(std::u8string(scenePath_.begin(), scenePath_.end())));
+                validationError_.clear();
+                navigation_.cancel();
+                wheel_ = 0;
+                ImGui::ClearActiveID();
+                persistenceFeedback_ = "Scene loaded.";
+            } catch (const std::exception& e) { persistenceFeedback_ = e.what(); }
+        }
+        if (!persistenceFeedback_.empty()) ImGui::TextWrapped("%s", persistenceFeedback_.c_str());
+        ImGui::Separator();
         ImGui::TextDisabled("Scene cubes (%d)", static_cast<int>(scene.cubes.size()));
         ImGui::Separator();
         if (ImGui::Button("Add cube")) {

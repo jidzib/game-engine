@@ -29,6 +29,8 @@ private:
     void inspector(engine::Scene& scene);
     Operations operations_;
     std::string validationError_;
+    std::string scenePath_ = "scene.json";
+    std::string persistenceFeedback_;
     static LRESULT handleEvent(HWND, UINT, WPARAM, LPARAM);
     engine::Window& window_;
     InputState input_;
