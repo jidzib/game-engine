@@ -58,6 +58,14 @@ set_property(DIRECTORY PROPERTY VS_STARTUP_PROJECT sandbox)
 
 include(CTest)
 if(BUILD_TESTING)
+    add_executable(editor_workflow_tests tests/EditorWorkflowTests.cpp)
+    target_include_directories(editor_workflow_tests PRIVATE editor)
+    target_link_libraries(editor_workflow_tests PRIVATE GameEngine::Engine)
+    add_test(NAME editor_workflow COMMAND ${CMAKE_COMMAND}
+        "-DPROGRAM=$<TARGET_FILE:editor_workflow_tests>"
+        "-DWORK=${CMAKE_CURRENT_BINARY_DIR}/editor-workflow-$<CONFIG>"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/EditorWorkflow.cmake")
+    set_tests_properties(editor_workflow PROPERTIES TIMEOUT 25)
     add_executable(persistence_tests tests/PersistenceTests.cpp)
     target_include_directories(persistence_tests PRIVATE editor third_party/json)
     target_link_libraries(persistence_tests PRIVATE GameEngine::Engine)

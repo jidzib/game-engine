@@ -39,6 +39,10 @@ Editor::~Editor() {
 }
 LRESULT Editor::handleEvent(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     auto* self = ImGui::GetCurrentContext() ? static_cast<Editor*>(ImGui::GetIO().UserData) : nullptr;
+    // The Win32 backend queues keyboard input but normally returns zero for it.
+    // Preserve Escape for cancelling UI edits/popups before the window shortcut.
+    const bool captureEscape = self && msg == WM_KEYDOWN && wp == VK_ESCAPE &&
+        (ImGui::GetIO().WantCaptureKeyboard || ImGui::GetIO().WantTextInput || ImGui::IsAnyItemActive());
     if (self) {
         if (msg == WM_KILLFOCUS || (msg == WM_ACTIVATEAPP && !wp) ||
             (msg == WM_SIZE && wp == SIZE_MINIMIZED) || msg == WM_CAPTURECHANGED ||
@@ -64,7 +68,8 @@ LRESULT Editor::handleEvent(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 self->wheel_ += static_cast<float>(GET_WHEEL_DELTA_WPARAM(wp)) / WHEEL_DELTA;
         }
     }
-    return ImGui_ImplWin32_WndProcHandler(hwnd, msg, wp, lp);
+    const auto result = ImGui_ImplWin32_WndProcHandler(hwnd, msg, wp, lp);
+    return captureEscape ? 1 : result;
 }
 void Editor::beginFrame(engine::Scene& scene, engine::Renderer& renderer) {
     operations_.reconcile(scene);

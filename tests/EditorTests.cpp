@@ -117,6 +117,29 @@ int main() {
                 ImGui::GetIO().AddMouseButtonEvent(ImGuiMouseButton_Right, false);
                 ImGui::GetIO().AddKeyEvent(ImGuiKey_W, false);
                 frame();
+                SendMessageW(window.handle(), WM_KEYDOWN, VK_ESCAPE, 0);
+                frame(); frame();
+                expect(!ImGui::IsAnyItemActive(), "Native Escape cancels name editing without closing the window");
+                SendMessageW(window.handle(), WM_KEYUP, VK_ESCAPE, 0);
+                frame();
+                for (const auto size : {ImVec2{300, 180}, ImVec2{700, 400}, ImVec2{400, 240}}) {
+                    ImGui::SetWindowSize("Viewport", size); frame();
+                    expect(ui.input().viewportVisible, "Repeated panel resizing retains drawable");
+                }
+                ImGui::SetWindowSize("Viewport", {100, 40}); frame();
+                expect(!ui.input().viewportVisible, "Expanded zero-content panel suspends scene drawing");
+                ImGui::SetWindowSize("Viewport", {480, 360}); frame();
+                SendMessageW(window.handle(), WM_SIZE, SIZE_MINIMIZED, 0);
+                expect(window.minimized(), "Native minimize message suspends drawable");
+                SendMessageW(window.handle(), WM_SIZE, SIZE_RESTORED, MAKELPARAM(1280, 720));
+                frame();
+                expect(!window.minimized() && ui.input().viewportVisible, "Native restore message resumes drawable");
+                SendMessageW(window.handle(), WM_KILLFOCUS, 0, 0);
+                frame();
+                ImGui::SetWindowFocus("Viewport"); frame(); frame();
+                expect(!ImGui::GetIO().WantCaptureKeyboard, "Viewport releases keyboard capture");
+                SendMessageW(window.handle(), WM_KEYDOWN, VK_ESCAPE, 0);
+                expect(!window.poll(), "Uncaptured Escape still exits");
             }
             expect(glGetError() == GL_NO_ERROR, "UI teardown without GL errors");
             expect(ImGui::GetCurrentContext() == nullptr, "UI context released");

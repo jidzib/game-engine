@@ -21,7 +21,8 @@ Hold the right mouse button **over the viewport image** to use these controls:
 
 Panning is normalized in 3D at 5 world units/second. Translation and orbit use
 frame time capped at 0.05 seconds; existing pitch (0.08–1.45 radians) and zoom
-(3–25 units) limits remain. Escape or the close button exits.
+(3–25 units) limits remain. Escape cancels active UI editing; when the UI does
+not capture the keyboard, Escape exits. The close button always exits.
 
 Releasing RMB, leaving the image, UI capture, deactivation, minimization, or
 focus loss cancels navigation. Press RMB again on the image to resume. Text
@@ -80,11 +81,12 @@ References returned by `addCube` remain valid when you append more cubes.
 The player is also drawn as a GameObject, available through
 `application.scene.player.object`. Configure its position, scale, and color
 the same way, and set `application.scene.player.movementSpeed` in units/second.
-Movement is normalized diagonally and uses elapsed frame time. The camera
-follows the player; R resets the camera without resetting player position.
-Player movement uses swept AABB collision and sliding against enabled scene colliders. Gravity and jumping are not implemented.
+The player movement API normalizes diagonally and uses elapsed frame time,
+with swept AABB collision and sliding against enabled scene colliders. Edit mode
+does not call it; its camera is independent of the player. Gravity and jumping
+are not implemented.
 
-## BoxCollider component (step 1)
+## BoxCollider component
 
 Each GameObject has an optional `boxCollider`, absent by default. Attach and
 configure it before `application.run(...)`:
@@ -102,8 +104,9 @@ Half extents should be positive; `{1,1,1}` matches the existing cube mesh.
 Use `cube.boxCollider->enabled = false` to disable an attached component, or
 `cube.boxCollider.reset()` to remove it. The player's GameObject supports the
 same attachment through `application.scene.player.object.boxCollider.emplace()`.
-This step stores configuration only: bounds, overlap checks, and movement
-blocking are not implemented yet, and `enabled` has no gameplay effect yet.
+The component stores configuration; Collision.cpp computes bounds, resolves
+overlap, and sweeps player movement against enabled static boxes. Editor mode
+stores these settings without running player movement.
 
 ## Build on this Windows machine
 
@@ -112,7 +115,7 @@ The Windows preset requires CMake 4.2+ for the Visual Studio 2026 generator.
 Run these commands in PowerShell from this folder:
 
 ```powershell
-cmake --preset windows
+cmake --preset windows -DBUILD_TESTING=ON
 cmake --build --preset debug
 .\build\windows\bin\Debug\sandbox.exe
 ```
@@ -166,99 +169,111 @@ with the inverse transpose of the model matrix for nonuniform scales.
 See the [Khronos WGL context guide](https://wikis.khronos.org/opengl/Creating_an_OpenGL_Context)
 and [uniform matrix reference](https://wikis.khronos.org/opengl/GLAPI/glUniform).
 
+## Scene editor workflow
+
+In Hierarchy, use **Add cube** and select a row. Selection uses stable cube IDs,
+so duplicate names and names containing `##` are safe. Inspector edits the name,
+position, positive scale (half dimensions), color, and optional box collider.
+Drag numbers or Ctrl+click to type. Collider offsets and half extents use local
+space and are scaled by the object. Disabled colliders retain their geometry.
+Invalid numeric edits leave the object unchanged and show an error. **Delete
+cube** removes the selected cube and clears selection.
+
+Enter a file in **Scene path**, then **Save**. Paths are UTF-8; relative paths
+resolve from the process working directory. Prefer an absolute path when
+restarting from another launcher. Restart sandbox, enter the same path, then
+**Load**. Loading replaces the active scene, clears selection and navigation,
+and preserves IDs, deleted-ID allocation history, player data and cube properties.
+Failed loads preserve the scene and selection and report an error in Hierarchy.
+Save replaces an existing destination through a temporary sibling file. Missing
+parent directories must be created separately. See [SCENE_FORMAT.md](SCENE_FORMAT.md)
+for the version 1 schema, validation, and filesystem limitations.
+
+Panels can be moved, resized, and collapsed. Layout resets each launch. The
+viewport flips OpenGL texture UVs, sizes storage to its drawable area and updates
+projection aspect. Collapsing or shrinking it to zero content suspends scene
+drawing while other panels render. Native minimization pauses rendering.
+Per-monitor DPI awareness uses physical client pixels; fonts/style rebuild on
+DPI changes and the window applies the suggested bounds.
+
+The separate editor target owns Dear ImGui and its Win32/OpenGL backends.
+Vendored dependencies are Dear ImGui v1.91.9b and nlohmann/json 3.11.3; see
+[ImGui provenance](third_party/imgui/README.vendor.md) and
+[JSON provenance](third_party/json/README.vendor.md) for pins and licenses.
+No package installation or network download is needed. ImGui also links dwmapi.
+The wheel routing uses the pinned ImGui internal hit test; review it when upgrading.
+
+Known scope limits: no undo/redo, unsaved-change warning, automatic scene loading,
+Play/Stop, rotation, parenting, picking, transform handles, docking, or additional
+object types. The player is saved and rendered but has no Inspector row. Collision
+is limited to static unrotated AABBs. GL allocation failures remain fatal and
+report an error; they are not recoverable Inspector validation failures.
+
 ## Verification
 
-Run `ctest --test-dir build/windows -C Debug --output-on-failure` after building.
-The tests check transforms, stable object references, movement speed and diagonal
-normalization, projection depth/aspect, camera targeting, and a ten-frame OpenGL
-rendering smoke test. Use `-C Release` for Release.
-The `renderer_target` integration test reads actual GL pixels to check depth
-occlusion, draw-order independence, preview blitting, and resize aspect ratio.
-It also checks unchanged storage, zero-area/restore behavior, size-limit errors,
-repeated resizing, and context teardown.
+Configure with BUILD_TESTING=ON, build both presets, and run:
 
-Offscreen task verification (2026-09-06): configuration and Debug/Release builds
-succeeded, and all four CTest tests passed in each configuration. The standalone
-Debug sandbox smoke test also exited successfully. Manual visual inspection and
-interactive minimize/restore were not performed; zero-area/restore was exercised
-through the renderer API. GPU out-of-memory and incomplete-framebuffer failures
-were not forced; size-limit rejection was tested.
+```powershell
+ctest --test-dir build/windows -C Debug --output-on-failure
+ctest --test-dir build/windows -C Release --output-on-failure
+& .\build\windows\bin\Debug\sandbox.exe --smoke-test
+& .\build\windows\bin\Release\sandbox.exe --smoke-test
+```
 
-Run the sandbox with `--smoke-test` to create the window, compile the shaders,
-render ten frames, and exit. Exit code zero indicates success; errors return one.
-Normal runs display an error dialog on startup or rendering failure.
+Smoke mode renders ten frames and exits; its CTest timeout is 20 seconds.
+The minimized branch also consumes its frame budget rather than waiting forever.
+A normal close preserves the HWND until editor and renderer cleanup completes.
+Source inspection confirms one presentation call per rendered Engine frame and
+one SwapBuffers call in Renderer::present; no gameplay update runs in Edit mode.
 
-Use the executables under `build/windows/bin/Debug` or `build/windows/bin/Release`.
-The older `build/verify` directory is not used by the Windows presets and may
-contain stale files from a previous project location.
+The nine CTest entries cover:
 
+- `editor_workflow`: author through editor operations, edit all cube properties,
+  reject invalid edits, delete selection, save, exit, and load in a separate
+  process. Compare complete saved state, IDs, failed-load preservation and
+  camera independence. This is an API integration test, not a UI click script.
+- `scene_persistence`: schema, numeric/ID validation, all authored fields,
+  allocator exhaustion, failed transactions and destination replacement.
+- `editor_operations`: selection, deletion, validation and collider authoring.
+- `scene_behavior` and `collision_behavior`: existing scene/math/movement and
+  swept collision/recovery behavior.
+- `renderer_target`: real GPU depth, draw order, blit pixels, aspect, repeated
+  sizing, zero-area restoration, allocation limit rejection and context cleanup.
+- `editor_navigation`: ownership, capture cancellation, timing and camera limits.
+- `editor_interface`: actual ImGui name input/capture, rendered edits, selection
+  deletion, resize/collapse/zero-content, synthetic native minimize/restore and
+  focus-loss messages, Escape cancellation/exit, and GL/UI cleanup.
+- `render_smoke`: bounded sandbox startup, rendering and shutdown.
 
-## Minimal editor interface
+### Milestone verification (2026-09-07)
 
-The separate `editor` target owns Dear ImGui and its Win32/OpenGL 3 backends.
-Scene and GameObject headers have no editor dependency. Hierarchy lists cube
-names read-only; Inspector provides placeholder guidance; Viewport displays the
-scene texture. Panels can be moved, resized, and collapsed using their title
-bars and borders. Layout persistence, docking, selection and editing are not
-implemented. Panels start with a sidebar and adjacent viewport each launch.
+Baseline configuration and Debug build succeeded; Debug CTest passed 8/8.
+The baseline Release build initially hit the documented SDK metadata access
+restriction; approved escalation succeeded and Release CTest then passed 8/8.
+No baseline test failures were found. The input review found that native Escape
+unconditionally closed the application during text editing. The fix preserves
+Escape for UI cancellation while retaining the uncaptured exit shortcut.
 
-Dear ImGui v1.91.9b is pinned to commit
-`f5befd2d29e66809cd1110a152e375a7f1981f06`. Source acquisition, archive checksum,
-license and compiled files are documented in
-[third_party/imgui/README.vendor.md](third_party/imgui/README.vendor.md).
-The existing Windows CMake presets build it directly without package installation.
+Final Debug and Release builds succeeded. Debug CTest passed 9/9 (1.48 seconds)
+and Release CTest passed 9/9 (1.69 seconds). Both standalone smoke runs exited 0
+in 0.48 seconds. An intermediate Debug link was blocked by an already-running
+sandbox; after it closed, the full Debug build, CTest and standalone smoke were
+rerun successfully. No toolchain or global Git settings were changed.
 
-Each frame builds UI layout, sizes the scene texture from available viewport
-content multiplied by framebuffer scale, renders the scene, clears the native
-window drawable, renders UI and presents once. The per-monitor-aware Win32
-backend reports physical client pixels, so framebuffer scale is normally one.
-Fonts and style sizes rebuild on DPI changes, and WM_DPICHANGED applies the
-suggested native window bounds. The UI reverses vertical UVs for OpenGL textures.
-Collapsed viewports suspend scene rendering while the other panels still render.
-Native minimization pauses normal rendering; bounded smoke mode still exits.
+Manual checks: **unavailable**, not passed. This session has no native desktop
+control API (browser control is available, native APIs are disabled). No manual
+create/save/restart/load, visual orientation, dragging, panel scrolling, camera
+navigation, Alt-Tab, minimize/restore or multi-monitor DPI check was performed.
+Automated GL/ImGui tests run in this environment, but synthetic messages do not
+prove foreground interaction or real monitor DPI transitions. UV orientation is
+reviewed in source; no screen-level orientation assertion is claimed. Neither
+GPU out-of-memory nor minimized smoke execution was forced.
 
-`Editor` owns its camera and navigation state. `Editor::input()` exposes viewport
-visibility, focus, image hover and UI capture flags. Holding RMB explicitly gives
-the image mouse ownership (ImGui also reports mouse capture for that image);
-active UI items, text input, keyboard capture and obstructing panels block it.
-The wheel hit test uses the pinned ImGui internal `FindHoveredWindowEx` helper;
-review this integration when upgrading ImGui. Native focus/capture loss cancels
-the interaction before queued frame input can restart it.
-Close, resize and DPI lifecycle handling still runs after event forwarding.
-UI backends shut down before the renderer releases GL and before HWND destruction.
-
-Editor verification (2026-09-06):
-
-- Configuration with BUILD_TESTING=ON succeeded.
-- Debug and Release builds succeeded with approved Windows SDK access.
-- Debug CTest: 5/5 passed; Release CTest: 5/5 passed.
-- Standalone Debug sandbox --smoke-test exited with code 0.
-- The new editor_interface test verifies panel-derived target sizing, resizing,
-  collapse/restore, identical scene pixels after an actual UI pass, and GL/UI
-  teardown. Existing scene, collision, depth/aspect and renderer tests still pass.
-- Manual visual inspection, interactive input capture, and multi-monitor DPI
-  behavior were not verified. Texture orientation is implemented with flipped UVs;
-  no manual orientation check is claimed.
-
-
-Editor navigation verification (2026-09-06):
-
-- Baseline Debug build and all five existing tests passed.
-- Final Debug and Release builds succeeded with approved SDK access.
-- Debug CTest: 6/6 passed; Release CTest: 6/6 passed, including collision and render smoke.
-- Standalone Debug sandbox --smoke-test exited successfully.
-- editor_navigation covers explicit press ownership, capture/focus cancellation,
-  fresh-press recovery, reset, normalized 3D translation, frame-rate scaling,
-  frame-time cap and finite camera limits.
-- Native interactive navigation, overlapping-panel scrolling and Alt-Tab were not
-  manually exercised; native desktop control is unavailable in this session.
-  Actual editable-field checks remain for task 6. The automated state tests
-  verify capture suppression but do not substitute for those UI checks.
-
-Navigation input fix: the viewport disables ImGui keyboard navigation, and a fresh
-RMB click transfers passive panel focus without treating it as an active widget.
-No hierarchy selection is required. Active text input and widgets still block
-camera interaction. The editor_interface test now injects ImGui input to verify
-focus transfer from the hierarchy and rejection while a real InputText field is
-active. Debug and Release builds and all six tests pass. Native foreground input
-was not verified: the automated window does not acquire foreground focus here.
+For manual follow-up, launch the Debug sandbox, create duplicate-name cubes,
+edit every property, delete the selection, save to an absolute path, restart and
+load. Try invalid numeric edits and malformed JSON. Type `wasd R` in Name while
+holding navigation keys, drag numbers, scroll Hierarchy under the pointer, and
+navigate only with a fresh RMB press over the image. Alt-Tab while navigating,
+then verify a fresh RMB press is required. Resize/collapse/restore the viewport,
+minimize/restore the window and move between differing-DPI monitors; inspect
+orientation, occlusion and proportions. Confirm authored data stays fixed.

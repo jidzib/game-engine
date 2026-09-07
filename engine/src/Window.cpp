@@ -71,7 +71,7 @@ LRESULT CALLBACK Window::procedure(HWND hwnd, UINT message, WPARAM wParam, LPARA
             return 0;
         }
         case WM_KEYDOWN:
-            if (wParam == VK_ESCAPE) { self->closing_ = true; return 0; }
+            if (wParam == VK_ESCAPE && !uiResult) { self->closing_ = true; return 0; }
             break;
         case WM_ERASEBKGND: return 1;
         case WM_DESTROY:
