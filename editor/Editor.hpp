@@ -1,6 +1,7 @@
 #pragma once
 #include <Windows.h>
 #include "Navigation.hpp"
+#include "Operations.hpp"
 namespace engine { class Window; class Renderer; struct Scene; }
 namespace editor {
 struct InputState {
@@ -18,12 +19,16 @@ public:
     ~Editor();
     Editor(const Editor&) = delete;
     Editor& operator=(const Editor&) = delete;
-    void beginFrame(const engine::Scene& scene, engine::Renderer& renderer);
+    void beginFrame(engine::Scene& scene, engine::Renderer& renderer);
     void render();
     void navigate(float seconds);
     const engine::Camera& camera() const { return navigation_.camera(); }
     const InputState& input() const { return input_; }
+    Operations& operations() { return operations_; }
 private:
+    void inspector(engine::Scene& scene);
+    Operations operations_;
+    std::string validationError_;
     static LRESULT handleEvent(HWND, UINT, WPARAM, LPARAM);
     engine::Window& window_;
     InputState input_;

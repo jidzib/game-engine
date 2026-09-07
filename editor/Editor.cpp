@@ -66,7 +66,8 @@ LRESULT Editor::handleEvent(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     }
     return ImGui_ImplWin32_WndProcHandler(hwnd, msg, wp, lp);
 }
-void Editor::beginFrame(const engine::Scene& scene, engine::Renderer& renderer) {
+void Editor::beginFrame(engine::Scene& scene, engine::Renderer& renderer) {
+    operations_.reconcile(scene);
     const float dpi = ImGui_ImplWin32_GetDpiScaleForHwnd(window_.handle());
     if (dpiScale_ != dpi) {
         dpiScale_ = dpi;
@@ -93,15 +94,29 @@ void Editor::beginFrame(const engine::Scene& scene, engine::Renderer& renderer) 
     if (ImGui::Begin("Hierarchy")) {
         ImGui::TextDisabled("Scene cubes (%d)", static_cast<int>(scene.cubes.size()));
         ImGui::Separator();
-        for (const auto& cube : scene.cubes) ImGui::TextUnformatted(cube.name.c_str());
+        if (ImGui::Button("Add cube")) {
+            try { operations_.create(scene); validationError_.clear(); }
+            catch (const std::overflow_error& e) { validationError_ = e.what(); }
+        }
+        for (const auto& cube : scene.cubes) {
+            const auto identity = std::to_string(cube.id);
+            ImGui::PushID(identity.c_str());
+            // A fixed hidden label avoids name-based identity and ## interpretation.
+            const auto start = ImGui::GetCursorScreenPos();
+            if (ImGui::Selectable("##cube", operations_.selection() == cube.id)) {
+                operations_.select(scene, cube.id);
+                validationError_.clear();
+            }
+            ImGui::GetWindowDrawList()->AddText(start, ImGui::GetColorU32(ImGuiCol_Text),
+                cube.name.empty() ? "(unnamed)" : cube.name.c_str());
+            ImGui::PopID();
+        }
     }
     ImGui::End();
     ImGui::SetNextWindowPos({0, size.y * 0.55f}, ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize({sidebar, size.y * 0.45f}, ImGuiCond_FirstUseEver);
     if (ImGui::Begin("Inspector")) {
-        ImGui::TextWrapped("Object selection and editing will be available in task 6.");
-        ImGui::Separator();
-        ImGui::TextWrapped("Resize or move panels using their borders and title bars.");
+        inspector(scene);
     }
     ImGui::End();
     ImGui::SetNextWindowPos({sidebar, 0}, ImGuiCond_FirstUseEver);
@@ -143,6 +158,60 @@ void Editor::beginFrame(const engine::Scene& scene, engine::Renderer& renderer) 
     ImGui::End();
     input_.wantCaptureKeyboard = io.WantCaptureKeyboard;
     input_.wantCaptureMouse = io.WantCaptureMouse;
+}
+void Editor::inspector(engine::Scene& scene) {
+    const auto id = operations_.selection();
+    const auto* cube = scene.findCube(id);
+    if (!cube) { ImGui::TextWrapped("Select a cube in the hierarchy to edit it."); return; }
+    const auto identity = std::to_string(id);
+    ImGui::PushID(identity.c_str());
+    if (ImGui::Button("Delete cube")) {
+        operations_.remove(scene, id);
+        validationError_.clear();
+        ImGui::PopID();
+        return;
+    }
+    CubeProperties proposed(*cube);
+    // Resize callback keeps arbitrary-length names editable without truncation.
+    const auto resizeText = [](ImGuiInputTextCallbackData* data) -> int {
+        auto& text = *static_cast<std::string*>(data->UserData);
+        text.resize(data->BufTextLen);
+        data->Buf = text.data();
+        return 0;
+    };
+    bool changed = ImGui::InputText("Name", proposed.name.data(), proposed.name.capacity() + 1,
+        ImGuiInputTextFlags_CallbackResize, resizeText, &proposed.name);
+    const auto vectorField = [](const char* label, engine::Vec3& value) {
+        float components[]{value.x, value.y, value.z};
+        const bool edited = ImGui::DragFloat3(label, components, 0.05f, 0, 0, "%.4f");
+        if (edited) value = {components[0], components[1], components[2]};
+        return edited;
+    };
+    changed |= vectorField("Position", proposed.position);
+    changed |= vectorField("Scale (half dimensions)", proposed.scale);
+    ImGui::TextWrapped("Cube dimensions = 2 x scale. Ctrl+click a number to type.");
+    float color[]{proposed.color.x, proposed.color.y, proposed.color.z};
+    if (ImGui::ColorEdit3("Color", color, ImGuiColorEditFlags_Float)) {
+        proposed.color = {color[0], color[1], color[2]}; changed = true;
+    }
+    ImGui::Separator();
+    if (!proposed.collider) {
+        ImGui::TextUnformatted("No box collider attached");
+        if (ImGui::Button("Attach box collider")) { proposed.collider.emplace(); changed = true; }
+    } else {
+        if (ImGui::Button("Remove box collider")) { proposed.collider.reset(); changed = true; }
+        else {
+            changed |= ImGui::Checkbox("Collider enabled", &proposed.collider->enabled);
+            changed |= vectorField("Local offset", proposed.collider->offset);
+            changed |= vectorField("Local half extents", proposed.collider->halfExtents);
+            ImGui::TextWrapped("Collider sizes must be positive. Offset and half extents are scaled by the cube scale.");
+        }
+    }
+    if (changed) Operations::update(scene, id, proposed, validationError_);
+    if (!validationError_.empty()) {
+        ImGui::TextWrapped("Edit rejected: %s", validationError_.c_str());
+    }
+    ImGui::PopID();
 }
 void Editor::navigate(float seconds) {
     const auto& io = ImGui::GetIO();

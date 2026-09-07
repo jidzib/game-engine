@@ -53,6 +53,17 @@ int main() {
                 auto original = pixels(initial);
                 frame();
                 expect(pixels(renderer.sceneTexture()) == original, "Scene unchanged after actual ImGui pass");
+                const auto cubeId = scene.cubes.front().id;
+                ui.operations().select(scene, cubeId);
+                editor::CubeProperties edited(*scene.findCube(cubeId));
+                edited.color = {1, 0, 0};
+                std::string error;
+                expect(editor::Operations::update(scene, cubeId, edited, error), "Editor operation changes color");
+                frame();
+                expect(pixels(renderer.sceneTexture()) != original, "Edited properties reach viewport texture");
+                expect(ui.operations().remove(scene, cubeId), "Delete inspected cube");
+                frame();
+                expect(ui.operations().selection() == engine::invalidCubeId, "Inspector survives selected deletion");
                 // Exercise actual ImGui capture and focus, not just the isolated
                 // navigation state. Read-only panels still enable keyboard nav.
                 ImGui::SetWindowFocus("Hierarchy"); frame();
@@ -88,6 +99,24 @@ int main() {
                 expect(!ui.input().viewportVisible && !renderer.sceneTexture().handle, "Collapsed viewport skips scene");
                 ImGui::SetWindowCollapsed("Viewport", false); frame();
                 expect(ui.input().viewportVisible && renderer.sceneTexture().handle, "Restore resumes scene");
+                const auto editableId = ui.operations().create(scene);
+                frame();
+                ImGui::SetWindowFocus("Inspector");
+                auto* inspector = ImGui::FindWindowByName("Inspector");
+                const auto scope = ImHashStr(std::to_string(editableId).c_str(), 0, inspector->ID);
+                ImGui::ActivateItemByID(ImHashStr("Name", 0, scope));
+                frame(); frame();
+                expect(ImGui::GetIO().WantTextInput && ImGui::IsAnyItemActive(), "Actual inspector name is active");
+                ImGui::GetIO().AddInputCharactersUTF8(" edited");
+                frame();
+                expect(scene.findCube(editableId)->name.find("edited") != std::string::npos, "Inspector typing commits name");
+                ImGui::GetIO().AddMouseButtonEvent(ImGuiMouseButton_Right, true);
+                ImGui::GetIO().AddKeyEvent(ImGuiKey_W, true);
+                frame();
+                expect(!ui.input().viewportInteractionStarted, "Inspector typing blocks viewport navigation");
+                ImGui::GetIO().AddMouseButtonEvent(ImGuiMouseButton_Right, false);
+                ImGui::GetIO().AddKeyEvent(ImGuiKey_W, false);
+                frame();
             }
             expect(glGetError() == GL_NO_ERROR, "UI teardown without GL errors");
             expect(ImGui::GetCurrentContext() == nullptr, "UI context released");
