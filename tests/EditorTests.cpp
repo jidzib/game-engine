@@ -2,6 +2,7 @@
 #include "Window.hpp"
 #include "Renderer.hpp"
 #include <imgui.h>
+#include <imgui_internal.h>
 #include <GL/gl.h>
 #include <iostream>
 #include <stdexcept>
@@ -20,15 +21,28 @@ int main() {
         engine::Window window;
         {
             engine::Renderer renderer(window.handle(), 0, 0);
-            engine::Camera camera;
             engine::Scene scene;
             scene.addCube("Read-only cube", {3, 0, 0});
             {
                 editor::Editor ui(window);
+                bool injectPointer = false;
+                ImVec2 pointer;
+                bool showTextEditor = false, focusText = false;
+                char text[64] = "Editable field";
                 auto frame = [&] {
                     expect(window.poll(), "Window remains open");
+                    if (injectPointer) ImGui::GetIO().AddMousePosEvent(pointer.x, pointer.y);
                     ui.beginFrame(scene, renderer);
-                    renderer.drawScene(camera, scene);
+                    if (showTextEditor) {
+                        ImGui::SetNextWindowPos({20, 80});
+                        ImGui::SetNextWindowSize({200, 100});
+                        ImGui::Begin("Input regression");
+                        if (focusText) { ImGui::SetKeyboardFocusHere(); focusText = false; }
+                        ImGui::InputText("Text", text, sizeof(text));
+                        ImGui::End();
+                    }
+                    ui.navigate(0.05f);
+                    renderer.drawScene(ui.camera(), scene);
                     renderer.prepareWindow(window.width(), window.height());
                     ui.render(); renderer.present();
                 };
@@ -39,6 +53,35 @@ int main() {
                 auto original = pixels(initial);
                 frame();
                 expect(pixels(renderer.sceneTexture()) == original, "Scene unchanged after actual ImGui pass");
+                // Exercise actual ImGui capture and focus, not just the isolated
+                // navigation state. Read-only panels still enable keyboard nav.
+                ImGui::SetWindowFocus("Hierarchy"); frame();
+                const auto* viewport = ImGui::FindWindowByName("Viewport");
+                const int x = static_cast<int>(viewport->Pos.x + viewport->Size.x * 0.5f);
+                const int y = static_cast<int>(viewport->Pos.y + viewport->Size.y * 0.5f);
+                injectPointer = true;
+                pointer = {float(x), float(y)};
+                frame();
+                expect(ui.input().wantCaptureKeyboard, "Read-only hierarchy reports passive keyboard capture");
+                ImGui::GetIO().AddMouseButtonEvent(ImGuiMouseButton_Right, true);
+                frame();
+                expect(ui.input().viewportInteractionStarted && ui.input().viewportFocused,
+                    "RMB transfers passive panel focus to viewport without scene selection");
+                frame();
+                expect(!ui.input().wantCaptureKeyboard, "Viewport does not capture camera keys for UI navigation");
+                ImGui::GetIO().AddMouseButtonEvent(ImGuiMouseButton_Right, false);
+                frame();
+                showTextEditor = focusText = true;
+                frame(); frame(); frame();
+                expect(ImGui::GetIO().WantTextInput && ImGui::IsAnyItemActive(), "Regression field is editing text");
+                ImGui::GetIO().AddMouseButtonEvent(ImGuiMouseButton_Right, true);
+                ImGui::GetIO().AddKeyEvent(ImGuiKey_R, true);
+                frame();
+                expect(!ui.input().viewportInteractionStarted, "RMB cannot steal an active text editing session");
+                ImGui::GetIO().AddMouseButtonEvent(ImGuiMouseButton_Right, false);
+                ImGui::GetIO().AddKeyEvent(ImGuiKey_R, false);
+                showTextEditor = false;
+                frame();
                 ImGui::SetWindowSize("Viewport", {480, 360}); frame();
                 expect(renderer.sceneTexture().width < initial.width, "Panel resizing resizes texture");
                 ImGui::SetWindowCollapsed("Viewport", true); frame();

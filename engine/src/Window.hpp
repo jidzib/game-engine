@@ -9,7 +9,7 @@ public:
     Window(const Window&) = delete;
     Window& operator=(const Window&) = delete;
     bool poll();
-    float takeWheelDelta();
+
     using EventHandler = LRESULT (*)(HWND, UINT, WPARAM, LPARAM);
     void setEventHandler(EventHandler handler) { eventHandler_ = handler; }
     [[nodiscard]] HWND handle() const { return handle_; }
@@ -23,7 +23,7 @@ private:
     HINSTANCE instance_ = GetModuleHandleW(nullptr);
     unsigned int width_ = 1280;
     unsigned int height_ = 720;
-    float wheelDelta_ = 0.0f;
+
     bool closing_ = false;
     EventHandler eventHandler_ = nullptr;
 };

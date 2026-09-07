@@ -17,7 +17,7 @@ Window::Window() {
     RECT bounds{0, 0, static_cast<LONG>(width_), static_cast<LONG>(height_)};
     AdjustWindowRect(&bounds, WS_OVERLAPPEDWINDOW, FALSE);
     handle_ = CreateWindowExW(0, windowClass,
-        L"C++ Game Engine - OpenGL | WASD: move player | Arrows: orbit | Wheel: zoom | R: camera reset | Esc: exit",
+        L"C++ Game Engine - Edit | Hold RMB in viewport to navigate | Esc: exit",
         WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT,
         bounds.right - bounds.left, bounds.bottom - bounds.top,
         nullptr, nullptr, instance_, this);
@@ -40,7 +40,6 @@ bool Window::poll() {
     }
     return handle_ != nullptr && !closing_;
 }
-float Window::takeWheelDelta() { return std::exchange(wheelDelta_, 0.0f); }
 
 LRESULT CALLBACK Window::procedure(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
     auto* self = reinterpret_cast<Window*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
@@ -65,9 +64,6 @@ LRESULT CALLBACK Window::procedure(HWND hwnd, UINT message, WPARAM wParam, LPARA
         case WM_SIZE:
             self->width_ = LOWORD(lParam);
             self->height_ = HIWORD(lParam);
-            return 0;
-        case WM_MOUSEWHEEL:
-            self->wheelDelta_ += static_cast<float>(GET_WHEEL_DELTA_WPARAM(wParam)) / WHEEL_DELTA;
             return 0;
         case WM_GETMINMAXINFO: {
             auto* info = reinterpret_cast<MINMAXINFO*>(lParam);

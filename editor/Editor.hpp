@@ -1,11 +1,13 @@
 #pragma once
 #include <Windows.h>
+#include "Navigation.hpp"
 namespace engine { class Window; class Renderer; struct Scene; }
 namespace editor {
 struct InputState {
     bool viewportVisible = false;
     bool viewportFocused = false;
     bool viewportHovered = false;
+    bool viewportInteractionStarted = false;
     bool wantCaptureKeyboard = false;
     bool wantCaptureMouse = false;
 };
@@ -18,11 +20,17 @@ public:
     Editor& operator=(const Editor&) = delete;
     void beginFrame(const engine::Scene& scene, engine::Renderer& renderer);
     void render();
+    void navigate(float seconds);
+    const engine::Camera& camera() const { return navigation_.camera(); }
     const InputState& input() const { return input_; }
 private:
     static LRESULT handleEvent(HWND, UINT, WPARAM, LPARAM);
     engine::Window& window_;
     InputState input_;
     float dpiScale_ = 0;
+    Navigation navigation_;
+    RECT viewportRect_{}; // Screen coordinates for event-time wheel hit testing.
+    float wheel_ = 0;
+    bool interrupted_ = false;
 };
 }

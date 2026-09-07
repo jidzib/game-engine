@@ -1,44 +1,42 @@
-# Task: Integrate a minimal editor interface
+# Task: Separate editor navigation from player simulation
 
 ## Goal
 
-Show the scene inside an editor application with hierarchy, inspector, and viewport panels.
+Navigate the scene with an independent editor camera while leaving the authored player and cubes stationary.
 
 ## Context
 
-- Engine: C++20, Windows, OpenGL 3.3.
-- Prerequisites: tasks 1–3 provide cube IDs, separate presentation, and an offscreen scene texture.
-- The window uses native Windows handling; inspect its event procedure and OpenGL context setup.
-- Use Dear ImGui with its Win32 and OpenGL 3 backends. This task authorizes that dependency.
-- Keep editor code in a separate module or target with no editor dependency in Scene/GameObject.
-- This task builds the interface shell. Dedicated navigation is task 5; object selection and editing are task 6.
+- Engine: C++20, Windows, OpenGL 3.3, Dear ImGui.
+- Prerequisites: tasks 1–4 provide identity, offscreen rendering, separate presentation, and editor panels.
+- Original Engine::run polls GetAsyncKeyState, moves scene.player, orbits/zooms Camera, and targets scene.player.object.position every frame.
+- Original controls include WASD, Space/Shift, arrow keys, mouse wheel, and R.
+- Inspect Camera, Window, Player, and editor integration before choosing a minimal navigation API.
+- Constraints: follow repository instructions. Keep gameplay movement/collision code intact for future Play mode.
 
 ## Steps
 
-1. Inspect repository instructions and establish a baseline.
-2. Integrate a pinned Dear ImGui revision using repository dependency conventions. Avoid floating branches and document acquisition/build requirements.
-3. Initialize and shut down UI backends in the correct window/context lifetime order.
-4. Forward necessary Windows events to the UI while preserving close, resize, and other window lifecycle handling.
-5. Add hierarchy, inspector, and viewport panels. A simple resizable layout is sufficient; docking is optional.
-6. Show cube names in a read-only hierarchy and placeholder inspector guidance.
-7. Replace the previous full-window blit with the scene texture displayed inside the viewport panel. Handle texture orientation and display/DPI scaling.
-8. Derive offscreen drawable dimensions from available panel content, skip collapsed/zero-area viewports, and render scene then UI before one presentation.
-9. Expose viewport focus/hover and UI input-capture information for task 5. Suppress gameplay keyboard input during UI keyboard capture and prevent UI scrolling from zooming the scene.
-10. Preserve bounded smoke-test startup and shutdown.
+1. Establish a baseline and identify current input ownership and camera capabilities.
+2. Add editor-owned camera/navigation state that does not reference the player's transform as its continuously updated target.
+3. Start in Edit mode and stop calling player movement/simulation from that mode.
+4. Implement orbit, zoom, reset, and target translation/panning so users can inspect the whole scene. Reuse current camera math where practical and document bindings.
+5. Route navigation only during explicit viewport interaction. Account for text editing, UI keyboard/mouse capture, window deactivation, and focus loss.
+6. Ensure wheel events over other panels do not zoom the scene and consumed events do not cause delayed navigation.
+7. Make reset restore an editor view without changing scene data.
+8. Preserve the bounded smoke-test path. Add focused tests only for nontrivial separable input/state logic.
 
 ## Acceptance Criteria
 
-- [ ] The application shows all three panels and the correctly oriented scene.
-- [ ] Viewport resizing maintains correct proportions and depth.
-- [ ] UI initialization, rendering, and shutdown work without OpenGL errors.
-- [ ] Scene drawing establishes its needed state after UI rendering on previous frames.
-- [ ] Core scene types do not depend on Dear ImGui.
-- [ ] Dependency revision is reproducible and documented.
-- [ ] Builds/tests and smoke-test succeed, or blockers are reported.
+- [ ] Camera navigation leaves player and cube data unchanged.
+- [ ] The editor can inspect locations away from the player.
+- [ ] Typing in UI fields does not navigate or reset the camera.
+- [ ] Scrolling other panels does not zoom the viewport.
+- [ ] Losing focus stops navigation without stuck controls.
+- [ ] Frame-rate-scaled movement and safe camera limits are maintained.
+- [ ] Existing collision tests remain valid and builds/smoke-test pass.
 
 ## Non-Goals
 
-- Object editing, persistence, Play mode, multi-window viewports, or a custom UI toolkit.
+- Play/Stop, gameplay redesign, gravity changes, object picking, or transform handles.
 
 ## Verification Commands
 
@@ -51,4 +49,4 @@ Run from the repository root:
     ctest --test-dir build/windows -C Release --output-on-failure
     & .\build\windows\bin\Debug\sandbox.exe --smoke-test
 
-Manually inspect panel sizing, texture orientation, DPI behavior where possible, and shutdown. Report actual results and visual verification status. Do not claim unrun checks passed.
+Manually exercise viewport interaction, other panels, focus loss, and camera reset when possible. Repeat text-field checks once task 6 adds editable fields. Report bindings, actual results, and verification limitations.

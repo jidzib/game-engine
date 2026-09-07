@@ -1,19 +1,34 @@
 # GameEngine
 
 C++20 engine foundation with a native Windows window, OpenGL 3.3 Core renderer,
-and an orbit camera following a movable orange player among configurable cubes.
+and an independent editor camera inspecting an authored player and configurable cubes.
 The engine is a static library; the sandbox is a standalone desktop executable.
 Dear ImGui is vendored at a pinned revision; no build-time downloads are required. WGL creates the context, the graphics
 driver supplies OpenGL, and the engine's Vec3/Mat4 types provide the math.
 
 ## Camera controls
 
-- WASD: move the orange player on the world X/Z plane (W = +Z, S = -Z, A = +X, D = -X).
-- Arrow keys: orbit around the player (hold to move).
-- Space / left Shift: move up / down.
-- Mouse wheel over the viewport image: zoom in/out. Scrolling other panels does not zoom.
-- R: reset the camera.
-- Escape or the close button: exit.
+The sandbox starts in Edit mode. Player and cube data stay stationary; gameplay
+movement and collision APIs remain intact for a future Play mode.
+
+Hold the right mouse button **over the viewport image** to use these controls:
+
+- WASD: translate the editor target on world X/Z (W = +Z, S = -Z, A = +X, D = -X).
+- Space / left Shift: translate the target up / down.
+- Arrow keys: orbit the editor target.
+- Mouse wheel: zoom in / out.
+- R: reset the entire editor view to its initial origin target, orbit and distance.
+
+Panning is normalized in 3D at 5 world units/second. Translation and orbit use
+frame time capped at 0.05 seconds; existing pitch (0.08–1.45 radians) and zoom
+(3–25 units) limits remain. Escape or the close button exits.
+
+Releasing RMB, leaving the image, UI capture, deactivation, minimization, or
+focus loss cancels navigation. Press RMB again on the image to resume. Text
+editing blocks all navigation, including reset. Wheel events are checked at their
+original screen position against the image and ImGui panel stacking; other panels
+keep scrolling and rejected events are never replayed. Wheel navigation begins
+after the RMB interaction has been established by a frame.
 
 Each cube mesh is centered on its GameObject position and measures two units per side before scaling. The camera
 uses a 60-degree vertical field of view, with near/far planes of 0.1 and 100.
@@ -202,10 +217,13 @@ suggested native window bounds. The UI reverses vertical UVs for OpenGL textures
 Collapsed viewports suspend scene rendering while the other panels still render.
 Native minimization pauses normal rendering; bounded smoke mode still exits.
 
-`Editor::input()` exposes viewport visibility, focus, image hover, and ImGui's
-keyboard/mouse capture flags for subsequent navigation work. Keyboard capture
-suppresses player and camera keys. Wheel zoom is routed only over the viewport
-image (which has no UI scrolling); other panels retain their wheel input.
+`Editor` owns its camera and navigation state. `Editor::input()` exposes viewport
+visibility, focus, image hover and UI capture flags. Holding RMB explicitly gives
+the image mouse ownership (ImGui also reports mouse capture for that image);
+active UI items, text input, keyboard capture and obstructing panels block it.
+The wheel hit test uses the pinned ImGui internal `FindHoveredWindowEx` helper;
+review this integration when upgrading ImGui. Native focus/capture loss cancels
+the interaction before queued frame input can restart it.
 Close, resize and DPI lifecycle handling still runs after event forwarding.
 UI backends shut down before the renderer releases GL and before HWND destruction.
 
@@ -221,3 +239,26 @@ Editor verification (2026-09-06):
 - Manual visual inspection, interactive input capture, and multi-monitor DPI
   behavior were not verified. Texture orientation is implemented with flipped UVs;
   no manual orientation check is claimed.
+
+
+Editor navigation verification (2026-09-06):
+
+- Baseline Debug build and all five existing tests passed.
+- Final Debug and Release builds succeeded with approved SDK access.
+- Debug CTest: 6/6 passed; Release CTest: 6/6 passed, including collision and render smoke.
+- Standalone Debug sandbox --smoke-test exited successfully.
+- editor_navigation covers explicit press ownership, capture/focus cancellation,
+  fresh-press recovery, reset, normalized 3D translation, frame-rate scaling,
+  frame-time cap and finite camera limits.
+- Native interactive navigation, overlapping-panel scrolling and Alt-Tab were not
+  manually exercised; native desktop control is unavailable in this session.
+  Actual editable-field checks remain for task 6. The automated state tests
+  verify capture suppression but do not substitute for those UI checks.
+
+Navigation input fix: the viewport disables ImGui keyboard navigation, and a fresh
+RMB click transfers passive panel focus without treating it as an active widget.
+No hierarchy selection is required. Active text input and widgets still block
+camera interaction. The editor_interface test now injects ImGui input to verify
+focus transfer from the hierarchy and rejection while a real InputText field is
+active. Debug and Release builds and all six tests pass. Native foreground input
+was not verified: the automated window does not acquire foreground focus here.
